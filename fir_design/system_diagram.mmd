@@ -1,0 +1,77 @@
+flowchart LR
+    SRC["<b>Audio source</b><br/>phone or laptop<br/>3.5 mm out"]
+    ADC["<b>Pmod I2S2 · A/D</b><br/>CS5343, line in<br/>JA7–JA10"]
+    DAC["<b>Pmod I2S2 · D/A</b><br/>CS4344, line out<br/>JA1–JA4"]
+    SPK["<b>Speaker</b><br/>or headphones,<br/>optional scope"]
+
+    subgraph FPGA["<b>Basys 3 FPGA</b> — top_basys3.v, one clock domain at 98.3 MHz"]
+        RX["<b>i2s_codec · RX</b><br/>receives 24-bit<br/>left + right"]
+        MIX["<b>Mono mix</b><br/>(L + R) / 2,<br/>top 16 bits"]
+        FIR["<b>fir_serial</b><br/>371-tap low-pass<br/>1 DSP slice"]
+        ROM[("<b>Coefficient ROM</b><br/>4 sets × 512<br/>fir_coeffs.mem")]
+        MUX{{"<b>Bypass mux</b><br/>raw or filtered"}}
+        TX["<b>i2s_codec · TX</b><br/>sends one word<br/>to left + right"]
+        CLK["<b>clock_gen</b><br/>MMCM<br/>100 → 98.3 MHz"]
+        DB["<b>debounce</b> × 3<br/>10 ms"]
+        MET["<b>level_meter</b><br/>3 dB per LED"]
+        SEG["<b>seg7_display</b><br/>cutoff or bYP"]
+    end
+
+    OSC["<b>100 MHz</b><br/>oscillator"]
+    BTN["<b>BTNC</b><br/>reset"]
+    SW["<b>SW0</b> bypass<br/><b>SW1–2</b> cutoff<br/>1 / 2 / 4 / 8 kHz"]
+    LEDS["<b>LED0–15</b><br/>output level"]
+    DISP["<b>7-segment</b><br/>1000 · 2000 ·<br/>4000 · 8000 · bYP"]
+
+    subgraph LEGEND["<b>Legend</b>"]
+        direction LR
+        KB["<b>Blue</b>: FPGA logic block"]
+        KR["<b>Red</b>: FIR filter core<br/>(filter + coefficients)"]
+        KY["<b>Yellow</b>: hardware outside the FPGA<br/>(Pmod, audio gear, board I/O)"]
+        KS1[" "] -- "<b>Solid</b>: audio samples, coefficients" --> KS2[" "]
+        KD1[" "] -- "<b>Dashed</b>: clocks" --> KD2[" "]
+        KT1[" "] -- "<b>Dotted</b>: control and display signals" --> KT2[" "]
+    end
+
+    %% solid: audio samples and coefficients
+    SRC -- "analog" --> ADC
+    ADC -- "SDOUT<br/>I2S data" --> RX
+    RX -- "L, R" --> MIX
+    MIX -- "sample<br/>48 kHz" --> FIR
+    FIR -- "filtered" --> MUX
+    MIX -- "raw" --> MUX
+    MUX -- "output<br/>sample" --> TX
+    TX -- "SDIN<br/>I2S data" --> DAC
+    DAC -- "analog" --> SPK
+    ROM -- "taps" --> FIR
+    MUX -- "level" --> MET
+
+    %% dashed: clocks
+    OSC --> CLK
+    CLK -- "98.3 MHz to<br/>every block" --> RX
+    RX -- "MCLK 24.576 MHz<br/>SCLK 3.072 MHz<br/>LRCK 48 kHz" --> ADC
+    TX -- "MCLK, SCLK, LRCK" --> DAC
+
+    %% dotted: control and display signals
+    BTN -- "reset" --> CLK
+    SW --> DB
+    DB -- "set select" --> ROM
+    DB -- "bypass" --> MUX
+    DB -- "bypass, set" --> SEG
+    MET --> LEDS
+    SEG --> DISP
+
+    linkStyle 3,4,5,6,7,8,9,10,11,12,13,0 stroke:#333,stroke-width:2.5px
+    linkStyle 14,15,16,17,1 stroke:#555,stroke-width:1.6px,stroke-dasharray:9 5
+    linkStyle 18,19,20,21,22,23,24,2 stroke:#555,stroke-width:1.6px,stroke-dasharray:2 4
+
+    classDef blue fill:#dbe9fb,stroke:#2f6fb5,stroke-width:1.5px,color:#111
+    classDef red fill:#f8d4d1,stroke:#c0392b,stroke-width:2.5px,color:#111
+    classDef yellow fill:#fff2bf,stroke:#c99a06,stroke-width:1.5px,color:#111
+    classDef blank fill:none,stroke:none,color:#fff
+    class RX,MIX,MUX,TX,CLK,DB,MET,SEG,KB blue
+    class FIR,ROM,KR red
+    class SRC,ADC,DAC,SPK,OSC,BTN,SW,LEDS,DISP,KY yellow
+    class KS1,KS2,KD1,KD2,KT1,KT2 blank
+    style FPGA fill:#f7f7f7,stroke:#888,stroke-width:1.5px,color:#111
+    style LEGEND fill:#ffffff,stroke:#888,stroke-width:1px,color:#111
